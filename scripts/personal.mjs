@@ -18,8 +18,9 @@ async function initialize() {
   const repo=process.argv[3];if(!repo||!/^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+(?:\.git)?$/.test(repo))throw new Error('Setup: node scripts/personal.mjs setup https://github.com/YOU/learnharness-data.git');
   fs.mkdirSync(home,{recursive:true});const c={schema:1,home,codeRepo,data:path.join(home,'data'),dataRepo:path.join(home,'sync-repo'),auth:path.join(home,'credentials','auth.json'),machine:randomUUID(),port:3020};
   if(fs.existsSync(c.dataRepo))throw new Error('Existing sync-repo requires manual inspection before setup');
-  git(home,'clone',repo,c.dataRepo);
-  const username=repo.split('/')[3];git(c.dataRepo,'config','credential.https://github.com.username',username);
+  const username=repo.split('/')[3];
+  git(home,'-c',`credential.https://github.com.username=${username}`,'clone',repo,c.dataRepo);
+  git(c.dataRepo,'config','credential.https://github.com.username',username);
   git(c.dataRepo,'config','user.name','Personal learning');git(c.dataRepo,'config','user.email',git(codeRepo,'config','user.email'));git(c.dataRepo,'config','core.autocrlf','false');
   if(!fs.existsSync(path.join(c.dataRepo,'manifest.json'))) {
     if(git(c.dataRepo,'branch','-r'))throw new Error('Existing data repository is missing its snapshot manifest');
