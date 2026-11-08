@@ -699,6 +699,8 @@ function SessionsSidebar() {
 				    labels room; teaching keeps the original draft route,
 				    practice carries its mode. */}
 				<div className="mx-3 mb-2 flex flex-col gap-1.5">
+					<Link className="rounded-md px-2 py-2 text-xs hover:bg-accent" href="/review">Review · no model usage</Link>
+					<Link className="rounded-md px-2 py-2 text-xs hover:bg-accent" href="/library">Source library</Link>
 					<button
 						type="button"
 						data-testid="new-session"

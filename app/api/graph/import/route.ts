@@ -17,7 +17,7 @@
  * healthy. The dock's chips + graph refetch track progress live through
  * /api/graph/status, as with session runs.
  */
-import { convertPdf, extraction, joinPages, NotesImportError, sourceDirectory } from "@/src/server";
+import { convertPdf, extraction, joinPages, NotesImportError, sourceDirectory, savePersonalSource } from "@/src/server";
 import { MAX_IMPORT_BODY_BYTES, MAX_IMPORT_BYTES, validNotesPath } from "@/lib/notes-import-limits.ts";
 import {
 	emit,
@@ -145,6 +145,8 @@ export async function POST(request: Request) {
 			if (!next) return;
 			const { file, requestIndex, filePath } = next;
 			try {
+				// Keep the original even if subsequent model extraction fails.
+				savePersonalSource(file.name,new Uint8Array(await file.arrayBuffer()),filePath);
 				const notes = await readNotesFile(file);
 				if (notes.kind === "refused") {
 					results.push({ filePath, requestIndex, outcome: "failed", ok: false, error: notes.error });

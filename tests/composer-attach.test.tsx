@@ -42,7 +42,8 @@ async function fixture({ desktop = true } = {}) {
 	const previous = new Map<string, PropertyDescriptor | undefined>();
 	for (const [name, next] of Object.entries({
 		React, window: win, document: doc, Node: win.Node, HTMLElement: win.HTMLElement, Element: win.Element,
-		Event: win.Event, CustomEvent: win.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true, innerWidth: 1000, innerHeight: 800,
+		fetch: async (_url: string, options: {body:FormData}) => { const file=options.body.get("files") as File; return Response.json({sources:[{reference:"/__lh_sources__/"+"a".repeat(64)+"/"+file.name.replace(/ /g,"_")}]}); },
+        Event: win.Event, CustomEvent: win.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true, innerWidth: 1000, innerHeight: 800,
 	})) {
 		previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
 		Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: next });
@@ -79,7 +80,7 @@ async function fixture({ desktop = true } = {}) {
 		get sends() { return sends; },
 		setFolderResult(result: typeof folderResult) { folderResult = result; },
 		async choice(label: string) {
-			await act(async () => { Array.from(doc.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((button) => button.textContent === label)!.click(); });
+			await act(async () => { Array.from(doc.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find((button) => button.textContent?.startsWith(label))!.click(); });
 		},
 		async resize() { await act(async () => { win.dispatchEvent(new win.Event("resize")); }); },
 		async key(key: string) {
@@ -146,9 +147,9 @@ describe("composer attach button", () => {
 		assert.deepEqual(result, { paths: ["/notes/a.pdf"], skipped: 2 });
 	});
 
-	it("server render is the browser case: a disabled-looking paperclip between the input and Send", () => {
+	it("server render enables managed uploads: a paperclip between the input and Send", () => {
 		const html = renderToStaticMarkup(<Composer busy={false} value="" onChange={() => {}} onSend={() => {}} onStop={() => {}} canSend={false} />);
-		assert.match(html, /aria-label="Attach files"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Attach files"/);
+		assert.match(html, /aria-label="Attach files"[^>]*aria-disabled="false"|aria-disabled="false"[^>]*aria-label="Attach files"/);
 		const editor = html.indexOf("data-file-path-input");
 		const attach = html.indexOf('data-testid="attach-files"');
 		const send = html.indexOf('aria-label="Send"');
@@ -162,12 +163,13 @@ describe("composer attach button", () => {
 		f.caret(4);
 		await act(async () => { f.button.click(); });
 		assert.equal(f.pickerClicks, 0);
-		assert.deepEqual(Array.from(f.doc.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent), ["Files", "Folder"]);
+		assert.deepEqual(Array.from(f.doc.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent?.split(" ·")[0]), ["Files", "Folder"]);
 		await f.choice("Files");
 		assert.equal(f.pickerClicks, 1);
 		const paths = ["/course/week 3.pdf", "/photos/board.jpg"];
 		await f.pick([f.file("week 3.pdf", paths[0]), f.file("board.jpg", paths[1]), f.file("virtual.pdf")]);
-		assert.equal(f.value, `read ${paths.map(quoteFilePath).join(" ")} this`);
+		const refs=["week_3.pdf","board.jpg","virtual.pdf"].map(name=>"/__lh_sources__/"+"a".repeat(64)+"/"+name);
+        assert.equal(f.value, `read ${refs.map(quoteFilePath).join(" ")} this`);
 		assert.equal(f.byteReads, 0, "paths only — file contents are never read");
 	});
 
@@ -232,15 +234,15 @@ describe("composer attach button", () => {
 		const f = await fixture();
 		f.caret(4);
 		await act(async () => { f.button.click(); });
-		assert.equal(f.doc.activeElement!.textContent, "Files");
+		assert.equal(f.doc.activeElement!.textContent?.split(" ·")[0], "Files");
 		assert.equal((await f.key("ArrowDown")).defaultPrevented, true);
-		assert.equal(f.doc.activeElement!.textContent, "Folder");
+		assert.equal(f.doc.activeElement!.textContent?.split(" ·")[0], "Folder");
 		await f.key("ArrowDown");
-		assert.equal(f.doc.activeElement!.textContent, "Files");
+		assert.equal(f.doc.activeElement!.textContent?.split(" ·")[0], "Files");
 		await f.key("End");
-		assert.equal(f.doc.activeElement!.textContent, "Folder");
+		assert.equal(f.doc.activeElement!.textContent?.split(" ·")[0], "Folder");
 		await f.key("Home");
-		assert.equal(f.doc.activeElement!.textContent, "Files");
+		assert.equal(f.doc.activeElement!.textContent?.split(" ·")[0], "Files");
 		assert.equal((await f.key("Escape")).defaultPrevented, true);
 		assert.equal(f.doc.activeElement, f.button);
 		assert.equal(f.doc.querySelector('[role="menu"]'), null);
@@ -259,12 +261,13 @@ describe("composer attach button", () => {
 		assert.equal(f.sends, 0);
 	});
 
-	it("browser: the button stays inert and the picker never opens", async () => {
+	it("browser: managed upload is available without a local-path bridge", async () => {
 		const f = await fixture({ desktop: false });
-		assert.equal(f.button.getAttribute("aria-disabled"), "true");
+		assert.equal(f.button.getAttribute("aria-disabled"), "false");
 		await act(async () => { f.button.click(); });
 		assert.equal(f.pickerClicks, 0);
-		await f.pick([f.file("a.pdf", "/a.pdf")]);
-		assert.equal(f.value, "readthis");
+		await f.choice("Files");assert.equal(f.pickerClicks,1);
+        await f.pick([f.file("a.pdf", "/a.pdf")]);
+        assert.ok(f.value.includes("/__lh_sources__/"));
 	});
 });

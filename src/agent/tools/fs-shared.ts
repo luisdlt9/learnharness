@@ -2,7 +2,7 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AUTH_FILE } from "../../../config.ts";
+import { AUTH_FILE, PATHS } from "../../../config.ts";
 import { comparisonPath, guardSourcePath, isWithin, realSourcePath as realOrMissing, resolvePolicy, type ResolvedFileAccessPolicy } from "./file-access.ts";
 
 /**
@@ -181,6 +181,13 @@ function checkedSourcePath(absolute: string, denied: (absolute: string) => boole
  *  These path checks are not protection against a hostile concurrent OS user. */
 export function resolveSourcePath(p?: string, policy?: ResolvedFileAccessPolicy): string {
 	const home = os.homedir();
+	// Portable managed-source references are stable across Windows and macOS.
+	if (p?.startsWith("/__lh_sources__/")) {
+		const parts=p.slice("/__lh_sources__/".length).split("/");
+		if(parts.length!==2 || !/^[a-f0-9]{64}$/.test(parts[0]!) || !/^[a-zA-Z0-9._-]+$/.test(parts[1]!) || parts[1]==="." || parts[1]==="..") throw new Error("Invalid managed-source reference");
+		const file=path.join(PATHS.data,"library","objects",...parts);
+		return guardSourcePath(checkedSourcePath(file,sourcePathCheck(home)),policy);
+	}
 	const resolved = !p ? home : p === "~" || p.startsWith("~/") || p.startsWith(`~${path.sep}`)
 		? path.join(home, p.slice(1))
 		: path.resolve(home, p);

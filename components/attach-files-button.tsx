@@ -7,6 +7,7 @@ import { directoryReferencePath, quoteFilePath } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
 import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
 import { BROWSER_NOTICE } from "@/components/file-path-drop-zone";
+import { uploadManagedFiles } from "@/lib/managed-upload";
 
 /** Picked files → the rooted paths an editor chips (issue #285), via the
  *  desktop bridge. Same validity rule as drops: a file without a usable
@@ -126,22 +127,21 @@ export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HT
 				hidden
 				data-testid="attach-files-input"
 				onChange={(e) => {
-					const resolve = window.lh?.getPathForFile;
-					const { paths } = resolve ? pathsForFiles(Array.from(e.currentTarget.files ?? []), resolve) : { paths: [] };
-					if (paths.length > 0) editorRef.current?.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
-					e.currentTarget.value = ""; // allow re-picking the same file
+					const files=Array.from(e.currentTarget.files??[]);e.currentTarget.value="";
+					setNotice("Copying files into your synced source library…");
+					void uploadManagedFiles(files).then(paths=>{if(paths.length)editorRef.current?.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT,{detail:paths}));setNotice("");}).catch(error=>setNotice(error.message));
 				}}
 			/>
-			<Hint label={desktop ? "Attach files or a folder" : BROWSER_NOTICE}>
+			<Hint label={"Copy files to synced library"}>
 				<button
 					ref={buttonRef}
 					type="button"
 					aria-label="Attach files"
-					aria-disabled={!desktop}
+					aria-disabled={false}
 					aria-haspopup="menu"
 					aria-expanded={open}
 					data-testid="attach-files"
-					onClick={() => { if (desktop) { setNotice(""); setOpen(!open); } }}
+					onClick={() => { setNotice(""); setOpen(!open); }}
 					className="flex size-10 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
 				>
 					<PaperclipIcon className="size-4" />
@@ -160,9 +160,9 @@ export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HT
 				}}>
 				{open ? <>
 					<button type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
-						onClick={() => { setOpen(false); pickerRef.current?.click(); }}>Files</button>
-					<button type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
-						onClick={() => { void chooseFolder(); }}>Folder</button>
+						onClick={() => { setOpen(false); pickerRef.current?.click(); }}>Files · copy to synced library</button>
+					{desktop&&<button type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
+						onClick={() => { void chooseFolder(); }}>Folder · local reference only</button>}
 				</> : notice}
 			</div>, document.body)}
 		</div>
