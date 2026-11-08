@@ -11,6 +11,7 @@ const home=process.env.LH_PERSONAL_HOME||path.join(os.homedir(),'LearnHarness');
 const configFile=path.join(home,'config.json');
 const command=process.argv[2]||'open';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const electronBinary=()=>path.join(codeRepo,'node_modules/electron/dist',process.platform==='win32'?'electron.exe':process.platform==='darwin'?'Electron.app/Contents/MacOS/Electron':'electron');
 function alive(pid){if(!Number.isInteger(pid)||pid<1)return false;try{process.kill(pid,0);return true;}catch{return false;}}
 function killTree(pid){if(!alive(pid))return;if(process.platform==='win32')spawnSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});else {try{process.kill(-pid,'SIGTERM');}catch{try{process.kill(pid,'SIGTERM');}catch{}}}}
 async function initialize() {
@@ -37,7 +38,10 @@ async function initialize() {
   atomicJson(configFile,c);return c;
 }
 async function main(){
-  if(command==='setup'){const c=await initialize();console.log(`Configured ${c.home}. Run npm run personal:open.`);return;}
+  if(command==='setup'){
+    if(!fs.existsSync(electronBinary())){const install=spawnSync(process.execPath,[path.join(codeRepo,'node_modules/electron/install.js')],{cwd:codeRepo,stdio:'inherit',windowsHide:true});if(install.status!==0)throw new Error('Electron runtime installation failed');}
+    const c=await initialize();console.log(`Configured ${c.home}. Run npm run personal:open.`);return;
+  }
   if(!fs.existsSync(configFile))throw new Error('Run setup first; see PERSONAL.md');
   const c=JSON.parse(fs.readFileSync(configFile,'utf8'));c.codeRepo=codeRepo;
   const lock=path.join(home,'running.json');const stop=path.join(home,'stop.request');const result=path.join(home,'last-result.json');
@@ -57,28 +61,30 @@ async function main(){
   }
   if(command==='update') {if(alive(previous?.pid))throw new Error('Finish & sync before updating');git(codeRepo,'fetch','upstream');git(codeRepo,'fetch','origin');console.log('Fetched updates. Merge upstream/main on an update branch, run checks with scratch data, then push your tested branch. See PERSONAL.md.');return;}
   if(command!=='open')throw new Error('Commands: setup, open, finish, status, update');
+  if(!fs.existsSync(electronBinary()))throw new Error('Electron runtime is missing. Run node node_modules/electron/install.js, then reopen.');
   if(alive(previous?.pid)||previous?.children?.some(alive))throw new Error('An app session already runs. Use Finish & sync first.');
   if(git(codeRepo,'status','--porcelain'))throw new Error('Commit or stash code changes before opening the live learning profile. Use scratch data for development.');
   fs.mkdirSync(home,{recursive:true});
   if(previous&&fs.existsSync(lock)){const now=JSON.parse(fs.readFileSync(lock,'utf8'));if(now.session!==previous.session||alive(now.pid))throw new Error('Another launcher acquired the profile');fs.unlinkSync(lock);}
   const lockFd=fs.openSync(lock,'wx');fs.closeSync(lockFd);
   const session=randomUUID();atomicJson(lock,{pid:process.pid,session,children:[]});
-  let server,desktop;let acquired=false;
+  let server,desktop;let acquired=false;let spawnError=null;
   try {
     if(fs.existsSync(stop))fs.unlinkSync(stop);
     acquire(c,{acceptCodeUpdate:process.argv.includes('--accept-code-update')});acquired=true;
     const env={...process.env,LH_DATA_DIR:c.data,LH_AUTH_FILE:c.auth,LH_DEV_URL:`http://127.0.0.1:${c.port}`,ELECTRON_RUN_AS_NODE:undefined};
     delete env.ELECTRON_RUN_AS_NODE;
     server=spawn(process.execPath,[path.join(codeRepo,'node_modules/next/dist/bin/next'),'dev','--hostname','127.0.0.1','--port',String(c.port)],{cwd:codeRepo,env,stdio:'inherit',windowsHide:true,detached:process.platform!=='win32'});
+    server.on('error',error=>{spawnError=error;});
     atomicJson(lock,{pid:process.pid,session,children:[server.pid]});
-    let ready=false;for(let i=0;i<120;i++){if(server.exitCode!==null)throw new Error('Local server exited before startup');try{const r=await fetch(env.LH_DEV_URL+'/review');if(r.ok){ready=true;break;}}catch{}await delay(500);}
+    let ready=false;for(let i=0;i<120;i++){if(spawnError)throw spawnError;if(server.exitCode!==null)throw new Error('Local server exited before startup');try{const r=await fetch(env.LH_DEV_URL+'/review');if(r.ok){ready=true;break;}}catch{}await delay(500);}
     if(!ready)throw new Error('Server startup timed out');
-    const electron=path.join(codeRepo,'node_modules/electron/dist',process.platform==='win32'?'electron.exe':process.platform==='darwin'?'Electron.app/Contents/MacOS/Electron':'electron');
-    desktop=spawn(electron,[codeRepo],{cwd:codeRepo,env,stdio:'inherit',windowsHide:true,detached:process.platform!=='win32'});
+    desktop=spawn(electronBinary(),[codeRepo],{cwd:codeRepo,env,stdio:'inherit',windowsHide:true,detached:process.platform!=='win32'});
+    desktop.on('error',error=>{spawnError=error;});
     atomicJson(lock,{pid:process.pid,session,children:[server.pid,desktop.pid]});
     console.log(`LearnHarness ready at ${env.LH_DEV_URL}. Close the desktop window or run Finish & sync.`);
     let stopping=false;const signal=()=>{stopping=true;};process.on('SIGINT',signal);process.on('SIGTERM',signal);
-    while(desktop.exitCode===null&&!stopping&&!fs.existsSync(stop)){if(server.exitCode!==null)throw new Error('Local server stopped unexpectedly');await delay(500);}
+    while(desktop.exitCode===null&&!stopping&&!fs.existsSync(stop)){if(spawnError)throw spawnError;if(server.exitCode!==null)throw new Error('Local server stopped unexpectedly');await delay(500);}
     if(fs.existsSync(stop)) {const request=JSON.parse(fs.readFileSync(stop,'utf8'));if(request.session!==session)throw new Error('Stale stop request');}
     // Let normal window-close cleanup happen; explicit finish stops this owned tree.
     killTree(desktop.pid);killTree(server.pid);await delay(500);
