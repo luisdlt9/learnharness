@@ -4,6 +4,8 @@ Luis authorized implementation of the agreed design on 2026-11-08: source-run Ma
 
 Read PERSONAL.md before changing the personal modules or syncing. Keep personal data, source documents, credentials and LifeOS context out of this public code repo. Use isolated scratch profiles for tests. Preserve stable IDs, review history and immutable content versions. Do not migrate or reset the existing LifeOS Recall database. No model/network calls in ordinary review. Keep each customization in a small module; retain upstream/main and merge via a tested update branch. Run tests, typecheck, lint and build for relevant code changes. Do not expose the local server beyond loopback.
 
+Read CARD-AUTHORING.md before creating/revising cards: clear questions, direct answers, substantive source-grounded explanations, precise terminology, examples/repairs and self-check criteria. This authoring guide is not injected into runtime teaching prompts; don't assume it changes model behavior or automatically creates cards.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

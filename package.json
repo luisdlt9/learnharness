@@ -27,7 +27,7 @@
 		"personal:finish": "node scripts/personal.mjs finish",
 		"personal:status": "node scripts/personal.mjs status",
 		"personal:update": "node scripts/personal.mjs update",
-		"test:personal": "node --import tsx --test tests/personal-review.test.ts tests/personal-managed-path.test.ts tests/personal-sync.test.mjs",
+		"test:personal": "node --import tsx --test tests/personal-review.test.ts tests/personal-managed-path.test.ts tests/personal-queue.test.ts tests/personal-sync.test.mjs",
 		"test:personal-ui": "node scripts/test-personal-ui.mjs"
 	},
 	"dependencies": {
