@@ -126,7 +126,9 @@ function subscribe(listener: () => void) {
 	return () => { off(); if (--readers === 0) { stopSignals?.(); stopSignals = undefined; } };
 }
 
-export function useDictationLanguage() {
-	const snapshot = useSyncExternalStore(subscribe, store.getSnapshot, store.getServerSnapshot);
+// Review mode loads the preference only when the learner starts dictating.
+const subscribeOnDemand = (listener: () => void) => store.subscribe(listener);
+export function useDictationLanguage({ onDemand = false }: { onDemand?: boolean } = {}) {
+	const snapshot = useSyncExternalStore(onDemand ? subscribeOnDemand : subscribe, store.getSnapshot, store.getServerSnapshot);
 	return { ...snapshot, load: store.load, save: store.save, getLanguage: store.getLanguage };
 }

@@ -89,6 +89,9 @@ export function personalAttempt(action: string, input: Record<string, unknown>, 
 				d.prepare("UPDATE attempts SET draft=?,confidence=? WHERE id=?").run(answer, confidence as number ?? null, id);
 				if (action === "reveal") { d.prepare("UPDATE attempts SET revealed=? WHERE id=?").run(new Date().toISOString(),id); event(d,id,"revealed"); }
 			}
+		} else if (action === "dictation") {
+			if(!["requested","transcribed","cancelled","failed"].includes(String(input.kind)))throw new Error("Invalid dictation event");
+			event(d,id,`dictation-${input.kind}`,{provider:"deepgram"});
 		} else if (action === "skip" && !a.rated) { event(d,id,"skipped"); }
 		else if (action !== "show" && action !== "get") { if (action !== "skip") throw new Error("Unknown attempt action"); }
 		return attemptView(d, d.prepare("SELECT * FROM attempts WHERE id=?").get(id) as Row);

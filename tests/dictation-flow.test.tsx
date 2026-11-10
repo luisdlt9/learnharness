@@ -45,7 +45,7 @@ const globals = globalThis as Record<string, unknown>;
 let restore: (() => void) | undefined;
 let dispose: (() => Promise<void>) | undefined;
 
-async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Response>) {
+async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Response>, reviewMode=false) {
 	const dom = parseHTML("<html><body><div id='root'></div></body></html>");
 	const state = {
 		record: { version: 1, dictation: { language } } as UserSettings,
@@ -54,6 +54,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		nextMic: undefined as Promise<{ getTracks: () => { stop: () => void }[] }> | undefined,
 		readFails: false,
 		reads: 0,
+		tokenRequests: 0,
 		active: false,
 		captures: 0,
 		stops: 0,
@@ -71,7 +72,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		WebSocket: Socket, AudioContext: AudioGraph, AudioWorkletNode: Worklet,
 		IS_REACT_ACT_ENVIRONMENT: true,
 		fetch: async (url: string, init?: RequestInit) => {
-			if (url === "/api/stt/token") return Response.json({ token: "test-token" });
+			if (url === "/api/stt/token") {state.tokenRequests++;return Response.json({ token: "test-token" });}
 			if (url === "/api/settings") {
 				state.reads++;
 				if (state.nextRead) { const response = state.nextRead; state.nextRead = undefined; return response; }
@@ -97,8 +98,8 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 	let latest!: Dictation;
 	let setting!: ReturnType<typeof useDictationLanguage>;
 	function Harness() {
-		latest = useDictation({ append: (text) => state.appends.push(text) });
-		setting = useDictationLanguage();
+		latest = useDictation({ append: (text) => state.appends.push(text),onDemand:reviewMode,directTarget:reviewMode });
+		setting = useDictationLanguage({onDemand:reviewMode});
 		state.active = useDictationActive();
 		return null;
 	}
@@ -108,7 +109,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		await act(async () => { root.render(<Harness />); });
 		// Each fixture is a new server record. Explicitly invalidate a prior
 		// fixture's window-lifetime cache, but do not refetch on remounts.
-		if (firstMount && setting.language !== undefined) {
+		if (!reviewMode && firstMount && setting.language !== undefined) {
 			await act(async () => { notifySettingsSaved("dictation"); });
 		}
 		firstMount = false;
@@ -319,4 +320,28 @@ test("microphone permission resolving after unmount immediately stops the late s
 	assert.equal(f.state.stops, 1);
 	assert.equal(Socket.all.length, 0);
 	assert.equal(isDictationActive(), false);
+});
+
+
+test("review dictation stays offline until requested, flushes finals once and does not prewarm afterward",async()=>{
+    const f=await fixture("en",undefined,true);await f.mount();
+    assert.equal(f.state.reads,0);assert.equal(f.state.tokenRequests,0);assert.equal(f.state.captures,0);
+    await act(async()=>{f.dictation.toggle();});
+    const socket=Socket.all[0]!;assert.ok(socket);assert.equal(f.state.captures,1);
+    const requests=f.state.tokenRequests;
+    await act(async()=>{socket.open();socket.final("Ownership means the value has one owner.");});
+    assert.deepEqual(f.state.appends,[]);
+    let finished=false;
+    await act(async()=>{void f.dictation.finish().then(()=>{finished=true;});});
+    assert.equal(finished,false);
+    await act(async()=>{socket.final("Borrowing does not transfer ownership.");socket.end();});
+    assert.equal(finished,true);assert.equal(f.state.appends.length,1);
+    assert.equal(f.state.appends[0],"Ownership means the value has one owner. Borrowing does not transfer ownership.");
+    assert.equal(f.state.tokenRequests,requests);assert.ok(f.state.stops>0);
+});
+test("review dictation cancellation discards speech and closes capture",async()=>{
+    const f=await fixture("en",undefined,true);await f.mount();
+    await act(async()=>{f.dictation.toggle();});const socket=Socket.all[0]!;
+    await act(async()=>{socket.open();socket.final("Discard this speech");f.dictation.cancel();});
+    assert.deepEqual(f.state.appends,[]);assert.equal(f.dictation.phase,"idle");assert.ok(f.state.stops>0);
 });

@@ -281,8 +281,8 @@ export type Dictation = {
  * composer fallback; the mounted question form's claim wins while a
  * question waits.
  */
-export function useDictation({ append }: { append: (text: string) => void }): Dictation {
-	const { getLanguage } = useDictationLanguage();
+export function useDictation({ append, onDemand = false, directTarget = false }: { append: (text: string) => void; onDemand?: boolean; directTarget?: boolean }): Dictation {
+	const { getLanguage } = useDictationLanguage({ onDemand });
 	const [phase, setPhase] = useState<DictationPhase>("idle");
 	const [error, setError] = useState<string | null>(null);
 	/** Latest RMS from the worklet — the meter samples this (dictate pattern). */
@@ -328,8 +328,8 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		if (bufferRef.current.length === 0) return;
 		const text = bufferRef.current.join(" ");
 		bufferRef.current = [];
-		(questionTarget ?? appendRef.current)(text);
-	}, []);
+		(directTarget ? appendRef.current : questionTarget ?? appendRef.current)(text);
+	}, [directTarget]);
 
 	/** Full teardown of one run's machinery. Idempotent; generation-guarded by callers. */
 	const cleanup = useCallback((warmNext = true) => {
@@ -362,8 +362,8 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		for (const w of waitersRef.current.splice(0)) w();
 		// Pre-mint for the next run (mitigation D) — best-effort; a keyless
 		// page just doesn't warm.
-		if (warmNext) warmTokens.refresh();
-	}, []);
+		if (warmNext && !onDemand) warmTokens.refresh();
+	}, [flush, onDemand]);
 
 	/** Open the Deepgram socket and wire its messages. `gen` guards staleness. */
 	const openSocket = useCallback(
@@ -600,14 +600,14 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	// page owns ONE hook instance, and only the mounted page's listener is
 	// attached.
 	useEffect(() => {
-		warmTokens.refresh(); // pre-mint at mount (mitigation D) — silent if keyless
+		if (!onDemand) warmTokens.refresh(); // review stays local until an explicit dictation click
 		return () => {
 			// Navigation cancels capture: invalidate every pending await before
 			// releasing resources, and never append into a different page's input.
 			bufferRef.current = [];
 			cleanup(false);
 		};
-	}, [cleanup]);
+	}, [cleanup, onDemand]);
 	useEffect(() => {
 		window.addEventListener("lh:kbd-toggle-dictation", toggle);
 		return () => window.removeEventListener("lh:kbd-toggle-dictation", toggle);
